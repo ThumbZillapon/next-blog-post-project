@@ -13,9 +13,9 @@ import {
 import { AdminSidebar } from "@/components/AdminWebSection";
 import { useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
-import axios from "axios";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
+import { supabase } from "@/lib/supabase";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -32,25 +32,35 @@ export default function AdminCategoryManagementPage() {
   const [filteredCategories, setFilteredCategories] = useState([]);
   const [searchKeyword, setSearchKeyword] = useState("");
 
-  // Fetch post data by ID
+  console.log('AdminCategoryManagementPage: Component loaded successfully');
+
+  // Fetch categories data from Supabase
   useEffect(() => {
-    const fetchPost = async () => {
+    const fetchCategories = async () => {
       try {
+        console.log('AdminCategoryManagementPage: Starting to fetch categories from Supabase');
         setIsLoading(true);
-        const responseCategories = await axios.get(
-          "https://blog-post-project-api-with-db.vercel.app/categories"
-        );
-        setCategories(responseCategories.data);
+        
+        const { data: categoriesData, error } = await supabase
+          .from('categories')
+          .select('*')
+          .order('name', { ascending: true });
+        
+        if (error) {
+          console.error('AdminCategoryManagementPage: Error fetching categories:', error);
+        } else {
+          console.log('AdminCategoryManagementPage: Categories fetched successfully:', categoriesData);
+          setCategories(categoriesData || []);
+        }
       } catch (error) {
-        console.error("Error fetching categories data:", error);
-        navigate("*");
+        console.error('AdminCategoryManagementPage: Error fetching categories:', error);
       } finally {
         setIsLoading(false);
       }
     };
 
-    fetchPost();
-  }, [navigate]);
+    fetchCategories();
+  }, []);
 
   useEffect(() => {
     const filtered = categories.filter((category) =>
@@ -62,9 +72,19 @@ export default function AdminCategoryManagementPage() {
   const handleDelete = async (categoryId) => {
     try {
       setIsLoading(true);
-      await axios.delete(
-        `https://blog-post-project-api-with-db.vercel.app/categories/${categoryId}`
-      );
+      console.log('AdminCategoryManagementPage: Deleting category:', categoryId);
+      
+      const { error } = await supabase
+        .from('categories')
+        .delete()
+        .eq('id', categoryId);
+      
+      if (error) {
+        console.error('AdminCategoryManagementPage: Error deleting category:', error);
+        throw error;
+      }
+      
+      console.log('AdminCategoryManagementPage: Category deleted successfully');
       toast.custom((t) => (
         <div className="bg-green-500 text-white p-4 rounded-sm flex justify-between items-start">
           <div>
@@ -84,7 +104,8 @@ export default function AdminCategoryManagementPage() {
       setCategories(
         categories.filter((category) => category.id !== categoryId)
       );
-    } catch {
+    } catch (error) {
+      console.error('AdminCategoryManagementPage: Delete error:', error);
       toast.custom((t) => (
         <div className="bg-red-500 text-white p-4 rounded-sm flex justify-between items-start">
           <div>

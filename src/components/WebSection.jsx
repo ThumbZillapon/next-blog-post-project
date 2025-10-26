@@ -102,7 +102,7 @@ export function NavBar() {
               </DropdownMenuItem>
               {state.user.role === "admin" && (
                 <DropdownMenuItem
-                  onClick={() => navigate("/admin/article-management")}
+                  onClick={() => navigate("/admin")}
                   className="text-sm text-foreground hover:bg-[#EFEEEB] hover:text-muted-foreground hover:rounded-sm cursor-pointer"
                 >
                   <SquareArrowOutUpRight className="mr-2 h-4 w-4" />
@@ -194,7 +194,7 @@ export function NavBar() {
                 </a>
                 {state.user.role === "admin" && (
                   <a
-                    onClick={() => navigate("/admin/article-management")}
+                    onClick={() => navigate("/admin")}
                     className="flex items-center justify-between px-4 py-2 text-base font-medium text-foreground hover:bg-[#EFEEEB] hover:text-muted-foreground rounded-sm cursor-pointer transition-colors"
                   >
                     <div className="flex items-center">

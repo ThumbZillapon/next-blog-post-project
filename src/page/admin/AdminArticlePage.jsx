@@ -19,9 +19,9 @@ import {
 } from "@/components/ui/table";
 import { AdminSidebar } from "@/components/AdminWebSection";
 import { useNavigate } from "react-router-dom";
-import axios from "axios";
 import { useEffect, useState } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { supabase } from "@/lib/supabase";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -39,30 +39,82 @@ export default function AdminArticleManagementPage() {
   const [filteredPosts, setFilteredPosts] = useState([]);
   const [searchKeyword, setSearchKeyword] = useState("");
   const [categories, setCategories] = useState([]);
+  const [statuses, setStatuses] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState("");
   const [selectedStatus, setSelectedStatus] = useState("");
 
+  console.log('AdminArticleManagementPage: Component loaded successfully');
+
   useEffect(() => {
+    console.log('AdminArticleManagementPage: Starting to fetch data from Supabase');
     setIsLoading(true);
-    const fetchPosts = async () => {
+    const fetchData = async () => {
       try {
-        const response = await axios.get(
-          "https://blog-post-project-api-with-db.vercel.app/posts/admin"
-        );
-        setPosts(response.data.posts);
-        setFilteredPosts(response.data.posts);
-        const responseCategories = await axios.get(
-          "https://blog-post-project-api-with-db.vercel.app/categories"
-        );
-        setCategories(responseCategories.data);
+        // Fetch posts from Supabase posts table (without joins first to debug)
+        console.log('AdminArticleManagementPage: Fetching posts from Supabase');
+        const { data: postsData, error: postsError } = await supabase
+          .from('posts')
+          .select('*')
+          .order('created_at', { ascending: false });
+        
+        if (postsError) {
+          console.error('AdminArticleManagementPage: Error fetching posts:', postsError);
+        } else {
+          console.log('AdminArticleManagementPage: Posts fetched successfully:', postsData);
+          
+          // If we have posts, try to enrich them with category and status names
+          if (postsData && postsData.length > 0) {
+            console.log('AdminArticleManagementPage: Enriching posts with category and status names');
+            
+            // Fetch all categories and statuses
+            const [categoriesResult, statusesResult] = await Promise.all([
+              supabase.from('categories').select('*'),
+              supabase.from('statuses').select('*')
+            ]);
+            
+            const categoriesMap = {};
+            const statusesMap = {};
+            
+            if (categoriesResult.data) {
+              categoriesResult.data.forEach(cat => {
+                categoriesMap[cat.id] = cat.name;
+              });
+            }
+            
+            if (statusesResult.data) {
+              statusesResult.data.forEach(status => {
+                statusesMap[status.id] = status.status;
+              });
+            }
+            
+            // Enrich posts with category and status names
+            const enrichedPosts = postsData.map(post => ({
+              ...post,
+              categories: { name: categoriesMap[post.category_id] || 'No Category' },
+              statuses: { status: statusesMap[post.status_id] || 'No Status' }
+            }));
+            
+            console.log('AdminArticleManagementPage: Enriched posts:', enrichedPosts);
+            setPosts(enrichedPosts);
+            setFilteredPosts(enrichedPosts);
+            
+            // Set categories and statuses for dropdowns
+            setCategories(categoriesResult.data || []);
+            setStatuses(statusesResult.data || []);
+          } else {
+            setPosts([]);
+            setFilteredPosts([]);
+          }
+        }
       } catch (error) {
-        console.error(error);
+        console.error('AdminArticleManagementPage: Error fetching data:', error);
       } finally {
+        console.log('AdminArticleManagementPage: Finished fetching data');
         setIsLoading(false);
       }
     };
 
-    fetchPosts();
+    fetchData();
   }, []);
 
   useEffect(() => {
@@ -81,13 +133,13 @@ export default function AdminArticleManagementPage() {
 
     if (selectedCategory) {
       filtered = filtered.filter((post) =>
-        post.category.toLowerCase().includes(selectedCategory.toLowerCase())
+        post.categories?.name?.toLowerCase().includes(selectedCategory.toLowerCase())
       );
     }
 
     if (selectedStatus) {
       filtered = filtered.filter((post) =>
-        post.status.toLowerCase().includes(selectedStatus.toLowerCase())
+        post.statuses?.status?.toLowerCase().includes(selectedStatus.toLowerCase())
       );
     }
 
@@ -97,9 +149,19 @@ export default function AdminArticleManagementPage() {
   const handleDelete = async (postId) => {
     try {
       setIsLoading(true);
-      await axios.delete(
-        `https://blog-post-project-api-with-db.vercel.app/posts/${postId}`
-      );
+      console.log('AdminArticleManagementPage: Deleting post:', postId);
+      
+      const { error } = await supabase
+        .from('posts')
+        .delete()
+        .eq('id', postId);
+      
+      if (error) {
+        console.error('AdminArticleManagementPage: Error deleting post:', error);
+        throw error;
+      }
+      
+      console.log('AdminArticleManagementPage: Post deleted successfully');
       toast.custom((t) => (
         <div className="bg-green-500 text-white p-4 rounded-sm flex justify-between items-start">
           <div>
@@ -117,7 +179,8 @@ export default function AdminArticleManagementPage() {
         </div>
       ));
       setPosts(posts.filter((post) => post.id !== postId));
-    } catch {
+    } catch (error) {
+      console.error('AdminArticleManagementPage: Delete error:', error);
       toast.custom((t) => (
         <div className="bg-red-500 text-white p-4 rounded-sm flex justify-between items-start">
           <div>
@@ -170,8 +233,11 @@ export default function AdminArticleManagementPage() {
               <SelectValue placeholder="Status" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="published">Published</SelectItem>
-              <SelectItem value="draft">Draft</SelectItem>
+              {statuses.map((status) => (
+                <SelectItem key={status.id} value={status.status}>
+                  {status.status}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
           <Select
@@ -223,16 +289,16 @@ export default function AdminArticleManagementPage() {
               filteredPosts.map((article) => (
                 <TableRow key={article.id}>
                   <TableCell className="font-medium">{article.title}</TableCell>
-                  <TableCell>{article.category}</TableCell>
+                  <TableCell>{article.categories?.name || 'No Category'}</TableCell>
                   <TableCell>
                     <span
                       className={`inline-flex capitalize items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                        article.status === "draft"
+                        article.statuses?.status?.toLowerCase() === "draft"
                           ? "bg-yellow-100 text-yellow-800"
                           : "bg-green-100 text-green-800"
                       }`}
                     >
-                      {article.status}
+                      {article.statuses?.status || 'No Status'}
                     </span>
                   </TableCell>
                   <TableCell className="text-right">

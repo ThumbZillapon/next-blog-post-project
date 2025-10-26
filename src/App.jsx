@@ -16,6 +16,7 @@ import AdminCreateArticlePage from "./page/admin/AdminCreateArticle";
 import AdminCreateCategoryPage from "./page/admin/AdminCreateCategoryPage";
 import AdminEditCategoryPage from "./page/admin/AdminEditCategoryPage";
 import AdminEditArticlePage from "./page/admin/AdminEditArticlePage";
+import AdminHomePage from "./page/admin/AdminHomePage";
 // import AdminNotificationPage from "./page/admin/AdminNotificationPage";
 import { useAuth } from "@/contexts/authentication"; // Import useAuth to check auth state
 import jwtInterceptor from "./utils/jwtIntercepter.js";
@@ -102,6 +103,19 @@ function App() {
         />
 
         {/* Admin Section */}
+        <Route
+          path="/admin"
+          element={
+            <ProtectedRoute
+              isLoading={state.getUserLoading}
+              isAuthenticated={isAuthenticated}
+              userRole={state.user?.role}
+              requiredRole="admin"
+            >
+              <AdminHomePage />
+            </ProtectedRoute>
+          }
+        />
         <Route
           path="/admin/article-management"
           element={

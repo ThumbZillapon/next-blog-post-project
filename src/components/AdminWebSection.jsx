@@ -6,6 +6,7 @@ import {
   LogOut,
   User,
   Globe,
+  LayoutDashboard,
 } from "lucide-react";
 import { useLocation, Link } from "react-router-dom";
 import { useAuth } from "@/contexts/authentication";
@@ -26,6 +27,17 @@ export function AdminSidebar() {
         <p className="text-sm text-orange-400">Admin panel</p>
       </div>
       <nav className="mt-6">
+        <Link
+          to="/admin"
+          className={`flex items-center px-4 py-2 ${
+            location.pathname === "/admin"
+              ? "bg-gray-200 text-gray-700"
+              : "text-gray-600 hover:bg-gray-100"
+          }`}
+        >
+          <LayoutDashboard className="mr-3 h-5 w-5" />
+          Dashboard
+        </Link>
         <Link
           to="/admin/article-management"
           className={`flex items-center px-4 py-2 ${

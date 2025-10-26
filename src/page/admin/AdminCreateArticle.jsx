@@ -16,6 +16,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
+import { supabase } from "@/lib/supabase";
 
 export default function AdminCreateArticlePage() {
   const { state } = useAuth();
@@ -38,13 +39,52 @@ export default function AdminCreateArticlePage() {
     const fetchCategories = async () => {
       try {
         setIsLoading(true);
-        const responseCategories = await axios.get(
-          "https://blog-post-project-api-with-db.vercel.app/categories"
-        );
-        setCategories(responseCategories.data);
+        console.log('AdminCreateArticlePage: Fetching categories from Supabase');
+        const { data: categoriesData, error } = await supabase
+          .from('categories')
+          .select('*')
+          .order('name', { ascending: true });
+        
+        if (error) {
+          console.error('AdminCreateArticlePage: Error fetching categories:', error);
+          toast.custom((t) => (
+            <div className="bg-red-500 text-white p-4 rounded-sm flex justify-between items-start">
+              <div>
+                <h2 className="font-bold text-lg mb-1">Failed to load categories</h2>
+                <p className="text-sm">
+                  Unable to load categories. Please refresh the page and try again.
+                </p>
+              </div>
+              <button
+                onClick={() => toast.dismiss(t)}
+                className="text-white hover:text-gray-200"
+              >
+                <X size={20} />
+              </button>
+            </div>
+          ));
+        } else {
+          console.log('AdminCreateArticlePage: Categories fetched successfully:', categoriesData);
+          setCategories(categoriesData || []);
+        }
       } catch (error) {
         console.error("Error fetching categories data:", error);
-        navigate("*");
+        toast.custom((t) => (
+          <div className="bg-red-500 text-white p-4 rounded-sm flex justify-between items-start">
+            <div>
+              <h2 className="font-bold text-lg mb-1">Failed to load categories</h2>
+              <p className="text-sm">
+                Unable to load categories. Please refresh the page and try again.
+              </p>
+            </div>
+            <button
+              onClick={() => toast.dismiss(t)}
+              className="text-white hover:text-gray-200"
+            >
+              <X size={20} />
+            </button>
+          </div>
+        ));
       } finally {
         setIsLoading(false);
       }
@@ -71,24 +111,107 @@ export default function AdminCreateArticlePage() {
   };
 
   const handleSave = async (postStatusId) => {
-    setIsSaving(true);
-    const formData = new FormData();
+    // Validation
+    if (!post.title || !post.description || !post.content) {
+      toast.custom((t) => (
+        <div className="bg-red-500 text-white p-4 rounded-sm flex justify-between items-start">
+          <div>
+            <h2 className="font-bold text-lg mb-1">Missing fields</h2>
+            <p className="text-sm">
+              Please fill in all required fields (title, introduction, content).
+            </p>
+          </div>
+          <button
+            onClick={() => toast.dismiss(t)}
+            className="text-white hover:text-gray-200"
+          >
+            <X size={20} />
+          </button>
+        </div>
+      ));
+      return;
+    }
 
-    formData.append("title", post.title);
-    formData.append("category_id", post.category_id);
-    formData.append("description", post.description);
-    formData.append("content", post.content);
-    formData.append("status_id", postStatusId);
-    formData.append("imageFile", imageFile.file);
+    if (!post.category_id) {
+      toast.custom((t) => (
+        <div className="bg-red-500 text-white p-4 rounded-sm flex justify-between items-start">
+          <div>
+            <h2 className="font-bold text-lg mb-1">Category required</h2>
+            <p className="text-sm">
+              Please select a category for the article.
+            </p>
+          </div>
+          <button
+            onClick={() => toast.dismiss(t)}
+            className="text-white hover:text-gray-200"
+          >
+            <X size={20} />
+          </button>
+        </div>
+      ));
+      return;
+    }
+
+    setIsSaving(true);
 
     try {
-      await axios.post(
-        "https://blog-post-project-api-with-db.vercel.app/posts",
-        formData,
-        {
-          headers: { "Content-Type": "multipart/form-data" },
+      console.log('AdminCreateArticlePage: Starting save process...');
+      console.log('AdminCreateArticlePage: Post data:', {
+        title: post.title,
+        category_id: post.category_id,
+        status_id: postStatusId,
+        hasImage: !!imageFile?.file
+      });
+
+      let imageUrl = null;
+
+      // Upload image if provided
+      if (imageFile?.file) {
+        console.log('AdminCreateArticlePage: Uploading image...');
+        try {
+          const { uploadArticleImage } = await import("@/utils/supabaseStorage");
+          const uploadResult = await uploadArticleImage(imageFile.file);
+          
+          if (uploadResult.success) {
+            imageUrl = uploadResult.url;
+            console.log('AdminCreateArticlePage: Image uploaded successfully:', imageUrl);
+          } else {
+            console.warn('AdminCreateArticlePage: Image upload failed, using placeholder:', uploadResult.error);
+            // Continue with placeholder image instead of failing
+          }
+        } catch (uploadError) {
+          console.warn('AdminCreateArticlePage: Image upload error, using placeholder:', uploadError);
+          // Continue with placeholder image instead of failing
         }
-      );
+      }
+
+      // Insert article data to Supabase
+      console.log('AdminCreateArticlePage: Creating article in database...');
+      const articleData = {
+        title: post.title,
+        description: post.description,
+        content: post.content,
+        category_id: post.category_id,
+        author_id: state.user?.id, // Set the current user's ID as author
+        status_id: postStatusId,
+        date: new Date().toISOString(),
+        image: imageUrl || 'https://placehold.co/800x400/EFEEEB/000000?text=No+Image', // Use placeholder if no image
+      };
+
+      console.log('AdminCreateArticlePage: Inserting data:', articleData);
+
+      const { data, error } = await supabase
+        .from('posts')
+        .insert([articleData])
+        .select()
+        .single();
+
+      if (error) {
+        console.error('AdminCreateArticlePage: Error creating article:', error);
+        throw new Error(`Database error: ${error.message || error.toString()}`);
+      }
+
+      console.log('AdminCreateArticlePage: Article created successfully:', data);
 
       toast.custom((t) => (
         <div className="bg-green-500 text-white p-4 rounded-sm flex justify-between items-start">
@@ -99,9 +222,7 @@ export default function AdminCreateArticlePage() {
             <p className="text-sm">
               {postStatusId === 1
                 ? "Your article has been successfully published."
-                : postStatusId === 2
-                ? "Your article has been successfully saved as draft."
-                : ""}
+                : "Your article has been successfully saved as draft."}
             </p>
           </div>
           <button
@@ -113,14 +234,15 @@ export default function AdminCreateArticlePage() {
         </div>
       ));
       navigate("/admin/article-management"); // Redirect after saving
-    } catch {
+    } catch (error) {
+      console.error('AdminCreateArticlePage: Error saving article:', error);
+      const errorMessage = error.message || 'An unexpected error occurred';
       toast.custom((t) => (
         <div className="bg-red-500 text-white p-4 rounded-sm flex justify-between items-start">
           <div>
             <h2 className="font-bold text-lg mb-1">Failed to create article</h2>
             <p className="text-sm">
-              Something went wrong while trying to update article. Please try
-              again later.
+              {errorMessage}
             </p>
           </div>
           <button
@@ -208,14 +330,14 @@ export default function AdminCreateArticlePage() {
                 className="px-8 py-2 rounded-full"
                 variant="outline"
                 disabled={isSaving}
-                onClick={() => handleSave(1)}
+                onClick={() => handleSave(2)}
               >
                 Save as draft
               </Button>
               <Button
                 className="px-8 py-2 rounded-full"
                 disabled={isSaving}
-                onClick={() => handleSave(2)}
+                onClick={() => handleSave(1)}
               >
                 Save and publish
               </Button>

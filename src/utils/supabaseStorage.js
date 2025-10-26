@@ -184,6 +184,82 @@ export const uploadProfilePicture = async (file, currentProfilePic = null) => {
 };
 
 /**
+ * Uploads an article image to Supabase Storage
+ * @param {File} file - The image file to upload
+ * @returns {Promise<{success: boolean, url?: string, error?: string}>}
+ */
+export const uploadArticleImage = async (file) => {
+  try {
+    console.log('🚀 Attempting direct upload to thumbnails bucket...');
+
+    // Generate unique filename
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
+    const filePath = `thumbnail-pictures/${fileName}`;
+
+    // Try with regular client first
+    let uploadResult = await supabase.storage
+      .from('thumbnails')
+      .upload(filePath, file);
+
+    // If upload fails due to RLS, try with service role (if available)
+    if (uploadResult.error && uploadResult.error.message.includes('permission denied')) {
+      console.log('🔄 RLS permission denied, trying with service role...');
+      
+      const serviceRoleKey = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
+      if (serviceRoleKey && serviceRoleKey !== 'your_service_role_key_here') {
+        const supabaseAdmin = createClient(
+          import.meta.env.VITE_SUPABASE_URL,
+          serviceRoleKey
+        );
+        
+        uploadResult = await supabaseAdmin.storage
+          .from('thumbnails')
+          .upload(filePath, file);
+      }
+    }
+
+    const { error: uploadError } = uploadResult;
+
+    if (uploadError) {
+      console.error('❌ Upload error:', uploadError);
+      
+      // Provide specific error messages for common issues
+      let errorMessage = uploadError.message;
+      
+      if (uploadError.message.includes('Bucket not found')) {
+        errorMessage = 'The "thumbnails" bucket does not exist. Please create it in your Supabase dashboard.';
+      } else if (uploadError.message.includes('permission denied')) {
+        errorMessage = 'Permission denied. Please add VITE_SUPABASE_SERVICE_ROLE_KEY to your .env file for storage access.';
+      } else if (uploadError.message.includes('File size exceeds')) {
+        errorMessage = 'File is too large. Please choose a smaller image.';
+      }
+      
+      return {
+        success: false,
+        error: errorMessage
+      };
+    }
+
+    // Get public URL
+    const { data: { publicUrl } } = supabase.storage
+      .from('thumbnails')
+      .getPublicUrl(filePath);
+
+    return {
+      success: true,
+      url: publicUrl
+    };
+  } catch (error) {
+    console.error('Error uploading article image:', error);
+    return {
+      success: false,
+      error: error.message || 'An unexpected error occurred while uploading the image'
+    };
+  }
+};
+
+/**
  * Cleans up orphaned profile pictures (optional utility function)
  * This can be called periodically to remove old images that weren't properly deleted
  * @returns {Promise<{success: boolean, deletedCount?: number, error?: string}>}

@@ -41,7 +41,9 @@ export const articlesService = {
           date,
           created_at,
           updated_at,
-          categories!inner(name)
+          author_id,
+          categories!inner(name),
+          users!author_id(name, profile_pic)
         `)
         .order('created_at', { ascending: false })
         .range((page - 1) * limit, page * limit - 1)
@@ -85,7 +87,8 @@ export const articlesService = {
         content: post.content,
         image: post.image,
         category: post.categories?.name || 'General',
-        author: 'Thompson P.', // Default author since it's not in the posts table
+        author: post.users?.name || 'Unknown Author',
+        authorImage: post.users?.profile_pic || null,
         date: post.date || post.created_at,
         likes: post.likes || 0
       }))
@@ -147,7 +150,9 @@ export const articlesService = {
           likes,
           date,
           created_at,
-          categories!inner(name)
+          author_id,
+          categories!inner(name),
+          users!author_id(name, profile_pic)
         `)
         .or(`title.ilike.%${keyword}%,description.ilike.%${keyword}%,content.ilike.%${keyword}%`)
         .order('created_at', { ascending: false })
@@ -177,7 +182,8 @@ export const articlesService = {
         content: post.content,
         image: post.image,
         category: post.categories?.name || 'General',
-        author: 'Thompson P.',
+        author: post.users?.name || 'Unknown Author',
+        authorImage: post.users?.profile_pic || null,
         date: post.date || post.created_at,
         likes: post.likes || 0
       }))
@@ -214,7 +220,9 @@ export const articlesService = {
           date,
           created_at,
           updated_at,
-          categories!inner(name)
+          author_id,
+          categories!inner(name),
+          users!author_id(name, profile_pic)
         `)
         .eq('id', id)
         .single()
@@ -238,7 +246,8 @@ export const articlesService = {
         content: data.content,
         image: data.image,
         category: data.categories?.name || 'General',
-        author: 'Thompson P.',
+        author: data.users?.name || 'Unknown Author',
+        authorImage: data.users?.profile_pic || null,
         date: data.date || data.created_at,
         likes: data.likes || 0
       }
@@ -345,6 +354,158 @@ export const articlesService = {
       return true
     } catch (error) {
       console.error('Error deleting article:', error)
+      throw error
+    }
+  },
+
+  // Like or unlike a post
+  async toggleLike(postId, userId) {
+    try {
+      if (!userId) {
+        throw new Error('User must be logged in to like posts')
+      }
+
+      // Check if user has already liked this post
+      const { data: existingLike } = await supabase
+        .from('post_likes')
+        .select('id')
+        .eq('post_id', postId)
+        .eq('user_id', userId)
+        .single()
+
+      if (existingLike) {
+        // Unlike the post
+        const { error } = await supabase
+          .from('post_likes')
+          .delete()
+          .eq('post_id', postId)
+          .eq('user_id', userId)
+
+        if (error) throw error
+
+        // Decrement likes count
+        const { error: updateError } = await supabase.rpc('decrement_likes', { post_id: postId })
+        if (updateError) {
+          console.warn('Failed to decrement likes count:', updateError)
+        }
+
+        return { liked: false }
+      } else {
+        // Like the post
+        const { error } = await supabase
+          .from('post_likes')
+          .insert([{ post_id: postId, user_id: userId }])
+
+        if (error) throw error
+
+        // Increment likes count
+        const { error: updateError } = await supabase.rpc('increment_likes', { post_id: postId })
+        if (updateError) {
+          console.warn('Failed to increment likes count:', updateError)
+        }
+
+        return { liked: true }
+      }
+    } catch (error) {
+      console.error('Error toggling like:', error)
+      throw error
+    }
+  },
+
+  // Check if user has liked a post
+  async hasUserLiked(postId, userId) {
+    try {
+      if (!userId) return false
+
+      const { data } = await supabase
+        .from('post_likes')
+        .select('id')
+        .eq('post_id', postId)
+        .eq('user_id', userId)
+        .single()
+
+      return !!data
+    } catch (error) {
+      return false
+    }
+  },
+
+  // Get comments for a post
+  async getComments(postId) {
+    try {
+      const { data, error } = await supabase
+        .from('comments')
+        .select(`
+          id,
+          comment_text,
+          created_at,
+          users!inner(name, profile_pic)
+        `)
+        .eq('post_id', postId)
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        console.error('Error fetching comments:', error)
+        return []
+      }
+
+      // Transform data to match expected format
+      return data.map(comment => {
+        const profilePic = comment.users?.profile_pic;
+        console.log('Comment user profile_pic:', profilePic);
+        
+        return {
+          id: comment.id,
+          name: comment.users?.name || 'Anonymous',
+          comment: comment.comment_text,
+          profile_pic: profilePic || null,
+          created_at: comment.created_at
+        };
+      })
+    } catch (error) {
+      console.error('Error fetching comments:', error)
+      return []
+    }
+  },
+
+  // Add a comment to a post
+  async addComment(postId, userId, commentText) {
+    try {
+      if (!userId) {
+        throw new Error('User must be logged in to comment')
+      }
+
+      const { data, error } = await supabase
+        .from('comments')
+        .insert([
+          {
+            post_id: postId,
+            user_id: userId,
+            comment_text: commentText
+          }
+        ])
+        .select(`
+          id,
+          comment_text,
+          created_at,
+          users!inner(name, profile_pic)
+        `)
+        .single()
+
+      if (error) throw error
+
+      console.log('Added comment - user profile_pic:', data.users?.profile_pic);
+
+      // Return the comment in the expected format
+      return {
+        id: data.id,
+        name: data.users?.name || 'Anonymous',
+        comment: data.comment_text,
+        profile_pic: data.users?.profile_pic || null,
+        created_at: data.created_at
+      }
+    } catch (error) {
+      console.error('Error adding comment:', error)
       throw error
     }
   }

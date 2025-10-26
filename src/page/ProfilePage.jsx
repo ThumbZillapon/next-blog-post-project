@@ -169,6 +169,21 @@ export default function ProfilePage() {
         throw new Error(`Failed to update profile: ${updateResult.error.message}`);
       }
 
+      // Also update the users table with name, username, and profile_pic
+      const userUpdates = {
+        name: profile.name,
+        username: profile.username
+      };
+      
+      if (imageFile && userMetadata.profilePic) {
+        userUpdates.profile_pic = userMetadata.profilePic;
+      }
+
+      await supabase
+        .from('users')
+        .update(userUpdates)
+        .eq('id', state.user.id);
+
       toast.custom((t) => (
         <div className="bg-green-500 text-white p-4 rounded-sm flex justify-between items-start">
           <div>

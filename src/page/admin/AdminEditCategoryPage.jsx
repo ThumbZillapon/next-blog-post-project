@@ -4,11 +4,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Trash2 } from "lucide-react";
 import { AdminSidebar } from "@/components/AdminWebSection";
-import axios from "axios";
 import { toast } from "sonner";
 import { X } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Skeleton } from "@/components/ui/skeleton";
+import { supabase } from "@/lib/supabase";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -30,12 +30,24 @@ export default function AdminEditCategoryPage() {
   useEffect(() => {
     const fetchCategory = async () => {
       try {
+        console.log('AdminEditCategoryPage: Starting to fetch category for categoryId:', categoryId);
         setIsLoading(true);
-        const response = await axios.get(
-          `https://blog-post-project-api-with-db.vercel.app/categories/${categoryId}`
-        );
-        setCategoryName(response.data.name); // Set the category name
-      } catch {
+        
+        const { data: categoryData, error } = await supabase
+          .from('categories')
+          .select('*')
+          .eq('id', categoryId)
+          .single();
+        
+        if (error) {
+          console.error('AdminEditCategoryPage: Error fetching category:', error);
+          throw error;
+        } else {
+          console.log('AdminEditCategoryPage: Category fetched successfully:', categoryData);
+          setCategoryName(categoryData.name);
+        }
+      } catch (error) {
+        console.error('AdminEditCategoryPage: Error fetching category data:', error);
         toast.custom((t) => (
           <div className="bg-red-500 text-white p-4 rounded-sm flex justify-between items-start">
             <div>
@@ -70,12 +82,19 @@ export default function AdminEditCategoryPage() {
     setIsSaving(true);
 
     try {
-      await axios.put(
-        `https://blog-post-project-api-with-db.vercel.app/categories/${categoryId}`,
-        {
-          name: categoryName,
-        }
-      );
+      console.log('AdminEditCategoryPage: Updating category:', { categoryId, name: categoryName });
+      
+      const { error } = await supabase
+        .from('categories')
+        .update({ name: categoryName })
+        .eq('id', categoryId);
+      
+      if (error) {
+        console.error('AdminEditCategoryPage: Error updating category:', error);
+        throw error;
+      }
+      
+      console.log('AdminEditCategoryPage: Category updated successfully');
 
       toast.custom((t) => (
         <div className="bg-green-500 text-white p-4 rounded-sm flex justify-between items-start">
@@ -97,7 +116,8 @@ export default function AdminEditCategoryPage() {
       ));
 
       navigate("/admin/category-management"); // Redirect to category management page after saving
-    } catch {
+    } catch (error) {
+      console.error('AdminEditCategoryPage: Save error:', error);
       toast.custom((t) => (
         <div className="bg-red-500 text-white p-4 rounded-sm flex justify-between items-start">
           <div>

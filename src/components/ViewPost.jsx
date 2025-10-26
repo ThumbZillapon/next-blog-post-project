@@ -18,11 +18,12 @@ import {
   X,
 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
-import authorImage from "../assets/author-image.jpeg";
+import defaultAuthorImage from "../assets/author-image.jpeg";
 import { useParams, useNavigate } from "react-router-dom";
 import { articlesService } from "../services/articlesService";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/authentication";
+import { supabase } from "@/lib/supabase";
 
 export default function ViewPost() {
   const [img, setImg] = useState("");
@@ -31,6 +32,8 @@ export default function ViewPost() {
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState("");
   const [content, setContent] = useState("");
+  const [author, setAuthor] = useState("Unknown Author");
+  const [authorImage, setAuthorImage] = useState(null);
   const [likes, setLikes] = useState(0);
   const [comments, setComments] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -52,14 +55,18 @@ export default function ViewPost() {
       const postData = await articlesService.getArticleById(param.postId);
       setImg(postData.image);
       setTitle(postData.title);
-      setDate(postData.created_at);
+      setDate(postData.date || postData.created_at);
       setDescription(postData.description);
       setCategory(postData.category);
       setContent(postData.content);
+      setAuthor(postData.author || "Unknown Author");
+      setAuthorImage(postData.authorImage);
       setLikes(postData.likes || 0);
-      // Note: Comments functionality would need to be implemented separately
-      // For now, we'll set an empty array
-      setComments([]);
+      
+      // Fetch comments for this post
+      const commentsData = await articlesService.getComments(param.postId);
+      setComments(commentsData);
+      
       setIsLoading(false);
     } catch (error) {
       console.log(error);
@@ -103,7 +110,7 @@ export default function ViewPost() {
           </article>
 
           <div className="xl:hidden px-4">
-            <AuthorBio />
+            <AuthorBio author={author} authorImage={authorImage} />
           </div>
 
           <Share
@@ -122,7 +129,7 @@ export default function ViewPost() {
 
         <div className="hidden xl:block xl:w-1/4">
           <div className="sticky top-4">
-            <AuthorBio />
+            <AuthorBio author={author} authorImage={authorImage} />
           </div>
         </div>
       </div>
@@ -146,31 +153,15 @@ function Share({ likesAmount, setDialogState, user, setLikes }) {
 
     setIsLiking(true);
     try {
-      // First try to like the post
-      try {
-        await axios.post(
-          `https://blog-post-project-api-with-db.vercel.app/posts/${param.postId}/likes`
-        );
-      } catch (error) {
-        // If we get a 500 error, assume the post is already liked and try to unlike
-        if (error.response?.status === 500) {
-          await axios.delete(
-            `https://blog-post-project-api-with-db.vercel.app/posts/${param.postId}/likes`
-          );
-        } else {
-          // If it's a different error, throw it to be caught by the outer try-catch
-          throw error;
-        }
-      }
+      // Toggle like/unlike
+      await articlesService.toggleLike(param.postId, user.id);
 
-      // After either liking or unliking, get the updated like count
-      const likesResponse = await axios.get(
-        `https://blog-post-project-api-with-db.vercel.app/posts/${param.postId}/likes`
-      );
-      setLikes(likesResponse.data.like_count);
+      // Get updated article data to fetch the new like count
+      const postData = await articlesService.getArticleById(param.postId);
+      setLikes(postData.likes || 0);
     } catch (error) {
       console.error("Error handling like/unlike:", error);
-      // You might want to show an error message to the user here
+      toast.error("Failed to update like. Please try again.");
     } finally {
       setIsLiking(false);
     }
@@ -250,39 +241,48 @@ function Share({ likesAmount, setDialogState, user, setLikes }) {
 function Comment({ setDialogState, commentList, setComments, user }) {
   const [commentText, setCommentText] = useState("");
   const [isError, setIsError] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const param = useParams();
   const handleSendComment = async (e) => {
     e.preventDefault();
     if (!commentText.trim()) {
       setIsError(true);
     } else {
-      // Submit the comment
+      setIsSubmitting(true);
       setIsError(false);
+      const textToSubmit = commentText;
       setCommentText("");
-      await axios.post(
-        `https://blog-post-project-api-with-db.vercel.app/posts/${param.postId}/comments`,
-        { comment: commentText }
-      );
-      const commentsResponse = await axios.get(
-        `https://blog-post-project-api-with-db.vercel.app/posts/${param.postId}/comments`
-      );
-      setComments(commentsResponse.data);
-      toast.custom((t) => (
-        <div className="bg-green-500 text-white p-4 rounded-sm flex justify-between items-start max-w-md w-full">
-          <div>
-            <h2 className="font-bold text-lg mb-1">Comment Posted!</h2>
-            <p className="text-sm">
-              Your comment has been successfully added to this post.
-            </p>
+      
+      try {
+        // Submit the comment
+        await articlesService.addComment(param.postId, user.id, textToSubmit);
+        
+        // Refresh comments
+        const commentsResponse = await articlesService.getComments(param.postId);
+        setComments(commentsResponse);
+        
+        toast.custom((t) => (
+          <div className="bg-green-500 text-white p-4 rounded-sm flex justify-between items-start max-w-md w-full">
+            <div>
+              <h2 className="font-bold text-lg mb-1">Comment Posted!</h2>
+              <p className="text-sm">
+                Your comment has been successfully added to this post.
+              </p>
+            </div>
+            <button
+              onClick={() => toast.dismiss(t)}
+              className="text-white hover:text-gray-200"
+            >
+              <X size={20} />
+            </button>
           </div>
-          <button
-            onClick={() => toast.dismiss(t)}
-            className="text-white hover:text-gray-200"
-          >
-            <X size={20} />
-          </button>
-        </div>
-      ));
+        ));
+      } catch (error) {
+        console.error("Error posting comment:", error);
+        toast.error("Failed to post comment. Please try again.");
+      } finally {
+        setIsSubmitting(false);
+      }
     }
   };
 
@@ -313,22 +313,35 @@ function Comment({ setDialogState, commentList, setComments, user }) {
           <div className="flex justify-end">
             <button
               type="submit"
-              className="px-8 py-2 bg-foreground text-white rounded-full hover:bg-muted-foreground transition-colors"
+              disabled={isSubmitting}
+              className="px-8 py-2 bg-foreground text-white rounded-full hover:bg-muted-foreground transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Send
+              {isSubmitting ? "Sending..." : "Send"}
             </button>
           </div>
         </form>
       </div>
       <div className="space-y-6 px-4">
-        {commentList.map((comment, index) => (
+        {commentList.map((comment, index) => {
+          // Handle profile picture URL - use default if empty or null
+          const profilePicUrl = comment.profile_pic && comment.profile_pic.trim() !== '' 
+            ? comment.profile_pic 
+            : defaultAuthorImage;
+          
+          console.log(`Comment ${index} - Name: ${comment.name}, Profile Pic: ${comment.profile_pic}`);
+          
+          return (
           <div key={index} className="flex flex-col gap-2 mb-4">
             <div className="flex space-x-4">
               <div className="flex-shrink-0">
                 <img
-                  src={comment.profile_pic}
+                  src={profilePicUrl}
                   alt={comment.name}
                   className="rounded-full w-12 h-12 object-cover"
+                  onError={(e) => {
+                    console.error('Image failed to load:', comment.profile_pic);
+                    e.target.src = defaultAuthorImage;
+                  }}
                 />
               </div>
               <div className="flex-grow">
@@ -349,45 +362,54 @@ function Comment({ setDialogState, commentList, setComments, user }) {
                 </div>
               </div>
             </div>
-            <p className=" text-gray-600">{comment.comment_text}</p>
+            <p className=" text-gray-600">{comment.comment}</p>
             {index < commentList.length - 1 && (
               <hr className="border-gray-300 my-4" />
             )}
           </div>
-        ))}
+        );
+        })}
       </div>
     </div>
   );
 }
 
-function AuthorBio() {
+function AuthorBio({ author, authorImage }) {
+  const isThompson = author === "Thompson P.";
+  // For Thompson P., always use the mock image. For others, use their profile pic or default
+  const displayImage = isThompson ? defaultAuthorImage : (authorImage || defaultAuthorImage);
+  
   return (
     <div className="bg-[#EFEEEB] rounded-3xl p-6">
       <div className="flex items-center mb-4">
         <div className="w-16 h-16 rounded-full overflow-hidden mr-4">
           <img
-            src={authorImage}
-            alt="Thompson P."
+            src={displayImage}
+            alt={author}
             className="object-cover w-16 h-16"
           />
         </div>
         <div>
           <p className="text-sm">Author</p>
-          <h3 className="text-2xl font-bold">Thompson P.</h3>
+          <h3 className="text-2xl font-bold">{author}</h3>
         </div>
       </div>
-      <hr className="border-gray-300 mb-4" />
-      <div className="text-muted-foreground space-y-4">
-        <p>
-          I am a pet enthusiast and freelance writer who specializes in animal
-          behavior and care. With a deep love for cats, I enjoy sharing insights
-          on feline companionship and wellness.
-        </p>
-        <p>
-          When I&apos;m not writing, I spend time volunteering at my local
-          animal shelter, helping cats find loving homes.
-        </p>
-      </div>
+      {isThompson && (
+        <>
+          <hr className="border-gray-300 mb-4" />
+          <div className="text-muted-foreground space-y-4">
+            <p>
+              I am a pet enthusiast and freelance writer who specializes in animal
+              behavior and care. With a deep love for cats, I enjoy sharing insights
+              on feline companionship and wellness.
+            </p>
+            <p>
+              When I&apos;m not writing, I spend time volunteering at my local
+              animal shelter, helping cats find loving homes.
+            </p>
+          </div>
+        </>
+      )}
     </div>
   );
 }

@@ -13,10 +13,10 @@ import {
 } from "@/components/ui/select";
 import { AdminSidebar } from "@/components/AdminWebSection";
 import { Textarea } from "@/components/ui/textarea";
-import axios from "axios"; // Make sure axios is installed
 import { useAuth } from "@/contexts/authentication";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
+import { supabase } from "@/lib/supabase";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -53,16 +53,40 @@ export default function AdminEditArticlePage() {
   useEffect(() => {
     const fetchPost = async () => {
       try {
+        console.log('AdminEditArticlePage: Starting to fetch data for postId:', postId);
         setIsLoading(true);
-        const responseCategories = await axios.get(
-          "https://blog-post-project-api-with-db.vercel.app/categories"
-        );
-        setCategories(responseCategories.data);
-        const response = await axios.get(
-          `https://blog-post-project-api-with-db.vercel.app/posts/admin/${postId}`
-        );
-        setPost(response.data);
-      } catch {
+        
+        // Fetch categories from Supabase
+        console.log('AdminEditArticlePage: Fetching categories from Supabase');
+        const { data: categoriesData, error: categoriesError } = await supabase
+          .from('categories')
+          .select('*')
+          .order('name', { ascending: true });
+        
+        if (categoriesError) {
+          console.error('AdminEditArticlePage: Error fetching categories:', categoriesError);
+        } else {
+          console.log('AdminEditArticlePage: Categories fetched successfully:', categoriesData);
+          setCategories(categoriesData || []);
+        }
+        
+        // Fetch post data from Supabase
+        console.log('AdminEditArticlePage: Fetching post from Supabase');
+        const { data: postData, error: postError } = await supabase
+          .from('posts')
+          .select('*')
+          .eq('id', postId)
+          .single();
+        
+        if (postError) {
+          console.error('AdminEditArticlePage: Error fetching post:', postError);
+          throw postError;
+        } else {
+          console.log('AdminEditArticlePage: Post fetched successfully:', postData);
+          setPost(postData);
+        }
+      } catch (error) {
+        console.error('AdminEditArticlePage: Error fetching data:', error);
         toast.custom((t) => (
           <div className="bg-red-500 text-white p-4 rounded-sm flex justify-between items-start">
             <div>
@@ -109,37 +133,62 @@ export default function AdminEditArticlePage() {
     setIsSaving(true);
 
     try {
-      if (imageFile?.file) {
-        // If the image has been changed, use FormData
-        const formData = new FormData();
-        formData.append("title", post.title);
-        formData.append("category_id", post.category_id);
-        formData.append("description", post.description);
-        formData.append("content", post.content);
-        formData.append("status_id", postStatusId);
-        formData.append("imageFile", imageFile.file);
+      console.log('AdminEditArticlePage: Starting save process...');
+      console.log('AdminEditArticlePage: Post data:', {
+        title: post.title,
+        category_id: post.category_id,
+        status_id: postStatusId,
+        hasImage: !!imageFile?.file
+      });
 
-        await axios.put(
-          `https://blog-post-project-api-with-db.vercel.app/posts/${postId}`,
-          formData,
-          {
-            headers: { "Content-Type": "multipart/form-data" },
+      let imageUrl = post.image; // Start with existing image
+
+      // Upload new image if provided
+      if (imageFile?.file) {
+        console.log('AdminEditArticlePage: Uploading new image...');
+        try {
+          const { uploadArticleImage } = await import("@/utils/supabaseStorage");
+          const uploadResult = await uploadArticleImage(imageFile.file);
+          
+          if (uploadResult.success) {
+            imageUrl = uploadResult.url;
+            console.log('AdminEditArticlePage: New image uploaded successfully:', imageUrl);
+          } else {
+            console.warn('AdminEditArticlePage: Image upload failed, keeping existing image:', uploadResult.error);
+            // Continue with existing image instead of failing
           }
-        );
-      } else {
-        // If the image is not changed, use the old method
-        await axios.put(
-          `https://blog-post-project-api-with-db.vercel.app/posts/${postId}`,
-          {
-            title: post.title,
-            image: post.image, // Existing image URL
-            category_id: post.category_id,
-            description: post.description,
-            content: post.content,
-            status_id: postStatusId,
-          }
-        );
+        } catch (uploadError) {
+          console.warn('AdminEditArticlePage: Image upload error, keeping existing image:', uploadError);
+          // Continue with existing image instead of failing
+        }
       }
+
+      // Update article data in Supabase
+      console.log('AdminEditArticlePage: Updating article in database...');
+      const updateData = {
+        title: post.title,
+        description: post.description,
+        content: post.content,
+        image: imageUrl,
+        category_id: post.category_id,
+        status_id: postStatusId,
+      };
+
+      console.log('AdminEditArticlePage: Updating with data:', updateData);
+
+      const { data, error } = await supabase
+        .from('posts')
+        .update(updateData)
+        .eq('id', postId)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('AdminEditArticlePage: Error updating article:', error);
+        throw new Error(`Database error: ${error.message || error.toString()}`);
+      }
+
+      console.log('AdminEditArticlePage: Article updated successfully:', data);
 
       // Success toast
       toast.custom((t) => (
@@ -151,9 +200,7 @@ export default function AdminEditArticlePage() {
             <p className="text-sm">
               {postStatusId === 1
                 ? "Your article has been successfully published."
-                : postStatusId === 2
-                ? "Your article has been successfully saved as draft."
-                : ""}
+                : "Your article has been successfully saved as draft."}
             </p>
           </div>
           <button
@@ -165,15 +212,15 @@ export default function AdminEditArticlePage() {
         </div>
       ));
       navigate("/admin/article-management"); // Redirect after saving
-    } catch {
-      // Error toast
+    } catch (error) {
+      console.error('AdminEditArticlePage: Error updating article:', error);
+      const errorMessage = error.message || 'An unexpected error occurred';
       toast.custom((t) => (
         <div className="bg-red-500 text-white p-4 rounded-sm flex justify-between items-start">
           <div>
             <h2 className="font-bold text-lg mb-1">Failed to update article</h2>
             <p className="text-sm">
-              Something went wrong while trying to update the article. Please
-              try again later.
+              {errorMessage}
             </p>
           </div>
           <button
@@ -191,10 +238,20 @@ export default function AdminEditArticlePage() {
 
   const handleDelete = async (postId) => {
     try {
+      console.log('AdminEditArticlePage: Deleting article:', postId);
       navigate("/admin/article-management");
-      await axios.delete(
-        `https://blog-post-project-api-with-db.vercel.app/posts/${postId}`
-      );
+      
+      const { error } = await supabase
+        .from('posts')
+        .delete()
+        .eq('id', postId);
+
+      if (error) {
+        console.error('AdminEditArticlePage: Error deleting article:', error);
+        throw error;
+      }
+
+      console.log('AdminEditArticlePage: Article deleted successfully');
       toast.custom((t) => (
         <div className="bg-green-500 text-white p-4 rounded-sm flex justify-between items-start">
           <div>
@@ -211,7 +268,8 @@ export default function AdminEditArticlePage() {
           </button>
         </div>
       ));
-    } catch {
+    } catch (error) {
+      console.error('AdminEditArticlePage: Error deleting article:', error);
       toast.custom((t) => (
         <div className="bg-red-500 text-white p-4 rounded-sm flex justify-between items-start">
           <div>

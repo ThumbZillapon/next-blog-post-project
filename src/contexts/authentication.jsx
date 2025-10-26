@@ -15,6 +15,20 @@ function AuthProvider(props) {
     user: null,
   });
 
+  // Track if we've already fetched user data to prevent unnecessary re-fetches
+  const [userFetched, setUserFetched] = useState(false);
+
+  // Debug state changes
+  useEffect(() => {
+    console.log('Auth state changed:', { 
+      loading: state.loading, 
+      getUserLoading: state.getUserLoading, 
+      isAuthenticated: Boolean(state.user),
+      userRole: state.user?.role,
+      userFetched
+    });
+  }, [state, userFetched]);
+
   const navigate = useNavigate();
 
   // Fetch user details using Supabase
@@ -27,18 +41,58 @@ function AuthProvider(props) {
       if (error) {
         throw error;
       }
-      
-      setState((prevState) => ({
-        ...prevState,
-        user: {
+
+      if (!user) {
+        setState((prevState) => ({
+          ...prevState,
+          user: null,
+          getUserLoading: false,
+        }));
+        return null;
+      }
+
+      // Fetch user role from the users table
+      console.log('Fetching user data from users table for user ID:', user.id);
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('role, name, username, profile_pic')
+        .eq('id', user.id)
+        .single();
+
+      console.log('Users table query result:', { userData, userError });
+
+      let userWithRole;
+      if (userError) {
+        console.warn('Could not fetch user data from users table:', userError);
+        // Fallback to auth user data if users table query fails
+        userWithRole = {
           ...user,
-          role: user?.user_metadata?.role || 'user', // Default to 'user' if no role is set
+          role: user?.user_metadata?.role || 'user',
           name: user?.user_metadata?.name || user?.email?.split('@')[0],
           username: user?.user_metadata?.username || user?.email?.split('@')[0],
           profilePic: user?.user_metadata?.profilePic || null,
-        },
+        };
+        console.log('Using fallback user data:', userWithRole);
+      } else {
+        userWithRole = {
+          ...user,
+          role: userData?.role || 'user',
+          name: userData?.name || user?.user_metadata?.name || user?.email?.split('@')[0],
+          username: userData?.username || user?.user_metadata?.username || user?.email?.split('@')[0],
+          profilePic: userData?.profile_pic || user?.user_metadata?.profilePic || null,
+        };
+        console.log('Using users table data:', userWithRole);
+      }
+      
+      setState((prevState) => ({
+        ...prevState,
+        user: userWithRole,
         getUserLoading: false,
       }));
+
+      setUserFetched(true);
+      console.log('User fetched with role:', userWithRole?.role);
+      return userWithRole;
     } catch (error) {
       setState((prevState) => ({
         ...prevState,
@@ -46,12 +100,18 @@ function AuthProvider(props) {
         user: null,
         getUserLoading: false,
       }));
+      return null;
     }
   };
 
   useEffect(() => {
-    fetchUser(); // Load user on initial app load
-  }, []);
+    if (!userFetched) {
+      console.log('Auth: Fetching user on mount');
+      fetchUser(); // Load user on initial app load
+    } else {
+      console.log('Auth: User already fetched, skipping');
+    }
+  }, [userFetched]);
 
   // Login user
   const login = async (data) => {
@@ -74,8 +134,18 @@ function AuthProvider(props) {
       }
 
       setState((prevState) => ({ ...prevState, loading: false, error: null }));
-      navigate("/");
-      await fetchUser();
+      
+      // Fetch user data to get role information from users table
+      const userWithRole = await fetchUser();
+      
+      // Redirect based on user role from users table
+      const userRole = userWithRole?.role || 'user';
+      
+      if (userRole === 'admin') {
+        navigate("/admin");
+      } else {
+        navigate("/");
+      }
     } catch (error) {
       console.error('Login error:', error);
       
@@ -150,6 +220,17 @@ function AuthProvider(props) {
         return;
       }
 
+      // Ensure the user record in the users table has the correct role
+      try {
+        await supabase
+          .from('users')
+          .update({ role: 'user' })
+          .eq('id', authData.user.id);
+      } catch (updateError) {
+        console.warn('Could not update user role in users table:', updateError);
+        // This is not critical for registration, so we continue
+      }
+
       setState((prevState) => ({ ...prevState, loading: false, error: null }));
       navigate("/sign-up/success");
     } catch (error) {
@@ -198,11 +279,13 @@ function AuthProvider(props) {
     try {
       await supabase.auth.signOut();
       setState({ user: null, error: null, loading: null });
+      setUserFetched(false);
       navigate("/");
     } catch (error) {
       console.error('Logout error:', error);
       // Even if logout fails, clear local state
       setState({ user: null, error: null, loading: null });
+      setUserFetched(false);
       navigate("/");
     }
   };

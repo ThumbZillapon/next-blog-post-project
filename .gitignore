@@ -24,3 +24,7 @@ dist-ssr
 *.sw?
 
 .env
+ADMIN_SETUP.md
+database_schema_safe.sql
+database_schema.sql
+LIKES_COMMENTS_SETUP.md

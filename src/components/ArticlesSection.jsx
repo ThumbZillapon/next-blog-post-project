@@ -1,5 +1,5 @@
 /* eslint-disable react/prop-types */
-import authorImage from "../assets/author-image.jpeg";
+import defaultAuthorImage from "../assets/author-image.jpeg";
 import { useEffect, useState } from "react";
 import { Search, Loader2 } from "lucide-react";
 import { articlesService } from "../services/articlesService";
@@ -209,6 +209,7 @@ export default function Articles() {
               title={blog.title}
               description={blog.description}
               author={blog.author}
+              authorImage={blog.authorImage}
               date={new Date(blog.date).toLocaleDateString("en-GB", {
                 day: "numeric",
                 month: "long",
@@ -242,8 +243,12 @@ export default function Articles() {
   );
 }
 
-function BlogCard({ id, image, category, title, description, author, date }) {
+function BlogCard({ id, image, category, title, description, author, authorImage, date }) {
   const navigate = useNavigate();
+  // For Thompson P., always use the mock image. For others, use their profile pic or default
+  const isThompson = author === "Thompson P.";
+  const displayImage = isThompson ? defaultAuthorImage : (authorImage && authorImage.trim() !== '' ? authorImage : defaultAuthorImage);
+  
   return (
     <div className="flex flex-col gap-4">
       <button
@@ -273,7 +278,7 @@ function BlogCard({ id, image, category, title, description, author, date }) {
         <div className="flex items-center text-sm">
           <img
             className="w-8 h-8 object-cover rounded-full mr-2"
-            src={authorImage}
+            src={displayImage}
             alt={author}
           />
           <span>{author}</span>
