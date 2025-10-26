@@ -119,9 +119,21 @@ function AuthProvider(props) {
       setState((prevState) => ({ ...prevState, loading: true, error: null }));
       
       // Check if Supabase is properly configured
-      if (!import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON_KEY || 
-          import.meta.env.VITE_SUPABASE_URL === 'https://placeholder.supabase.co') {
-        throw new Error('Database error granting user: Supabase is not properly configured. Please check your environment variables.');
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      
+      if (!supabaseUrl || !supabaseKey || 
+          supabaseUrl === 'https://placeholder.supabase.co' ||
+          supabaseUrl === '' ||
+          supabaseKey === '' ||
+          supabaseKey === 'your_anon_key_here') {
+        console.error('Supabase configuration error:', {
+          hasUrl: !!supabaseUrl,
+          urlValue: supabaseUrl?.substring(0, 20) + '...',
+          hasKey: !!supabaseKey,
+          keyValue: supabaseKey ? supabaseKey.substring(0, 20) + '...' : 'missing'
+        });
+        throw new Error('Supabase is not properly configured. In Vercel, go to Settings > Environment Variables and add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY from your Supabase project settings.');
       }
       
       const { data: authData, error } = await supabase.auth.signInWithPassword({
@@ -155,8 +167,8 @@ function AuthProvider(props) {
       // Log the full error for debugging
       console.error('Full error object:', error);
       
-      if (message.includes('Database error granting user')) {
-        errorMessage = "Database error granting user: This might be due to database triggers, RLS policies, or missing tables. Check your Supabase dashboard.";
+      if (message.includes('Database error granting user') || message.includes('Supabase is not properly configured')) {
+        errorMessage = message; // Use the actual error message
       } else if (message.includes('Invalid login credentials')) {
         errorMessage = "Invalid email or password.";
       } else if (message.includes('Email not confirmed')) {
@@ -188,9 +200,21 @@ function AuthProvider(props) {
       setState((prevState) => ({ ...prevState, loading: true, error: null }));
       
       // Check if Supabase is properly configured
-      if (!import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON_KEY || 
-          import.meta.env.VITE_SUPABASE_URL === 'https://placeholder.supabase.co') {
-        throw new Error('Database error saving new user: Supabase is not properly configured. Please check your environment variables.');
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      
+      if (!supabaseUrl || !supabaseKey || 
+          supabaseUrl === 'https://placeholder.supabase.co' ||
+          supabaseUrl === '' ||
+          supabaseKey === '' ||
+          supabaseKey === 'your_anon_key_here') {
+        console.error('Supabase configuration error:', {
+          hasUrl: !!supabaseUrl,
+          urlValue: supabaseUrl?.substring(0, 20) + '...',
+          hasKey: !!supabaseKey,
+          keyValue: supabaseKey ? supabaseKey.substring(0, 20) + '...' : 'missing'
+        });
+        throw new Error('Supabase is not properly configured. In Vercel, go to Settings > Environment Variables and add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY from your Supabase project settings.');
       }
 
       const siteUrl = import.meta.env.VITE_SITE_URL || window.location.origin;
@@ -249,8 +273,8 @@ function AuthProvider(props) {
       }
       
       // Handle specific Supabase errors
-      if (message.includes('Database error saving new user')) {
-        errorMessage = "Database error saving new user: This might be due to database triggers, RLS policies, or missing tables. Check your Supabase dashboard.";
+      if (message.includes('Database error saving new user') || message.includes('Supabase is not properly configured')) {
+        errorMessage = message; // Use the actual error message
       } else if (message.includes('User already registered')) {
         errorMessage = "An account with this email already exists.";
       } else if (message.includes('Password should be at least')) {
