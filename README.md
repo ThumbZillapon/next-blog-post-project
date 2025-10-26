@@ -2,6 +2,12 @@
 
 A modern, full-featured blog application built with React, Vite, and Supabase. This project provides a complete blogging platform with user authentication, role-based access control, and comprehensive content management features.
 
+## Test Emails & Passwords
+Admin Email : neatneatly47@gmail.com
+Admin Password : Blogpost@123
+User Email : neatneatly5@gmail.com
+User Password :  Blogpost@123
+
 ## 🚀 Features
 
 ### Public Features
